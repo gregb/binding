@@ -206,31 +206,47 @@ func mapForm(formStruct reflect.Value, form map[string][]string, formfile map[st
 
 		if typeField.Type.Kind() == reflect.Struct {
 			mapForm(structField, form, formfile, errors)
-		} else if inputFieldName := typeField.Tag.Get("form"); inputFieldName != "" {
-			if !structField.CanSet() {
-				continue
-			}
+			continue
+		}
 
-			inputValue, exists := form[inputFieldName]
-			if exists {
-				numElems := len(inputValue)
-				if structField.Kind() == reflect.Slice && numElems > 0 {
-					sliceOf := structField.Type().Elem().Kind()
-					slice := reflect.MakeSlice(structField.Type(), numElems, numElems)
-					for i := 0; i < numElems; i++ {
-						setWithProperType(sliceOf, inputValue[i], slice.Index(i), inputFieldName, errors)
-					}
-					formStruct.Field(i).Set(slice)
-				} else {
-					setWithProperType(typeField.Type.Kind(), inputValue[0], structField, inputFieldName, errors)
-				}
-				continue
-			}
+		if !structField.CanSet() {
+			continue
+		}
 
-			inputFile, exists := formfile[inputFieldName]
+		// first try is form tag on field
+		inputFieldName := typeField.Tag.Get("form");
+		inputValue, exists := form[inputFieldName]
+
+		if !exists {
+			// second try is field name as-is
+			inputFieldName := typeField.Name
+			inputValue, exists = form[inputFieldName]
+
 			if !exists {
-				continue
+				// third try is field name lower cased
+				inputFieldName := strings.ToLower(typeField.Name)
+				inputValue, exists = form[inputFieldName]
 			}
+		}
+
+		// if one of those worked...
+		if exists {
+			numElems := len(inputValue)
+			if structField.Kind() == reflect.Slice && numElems > 0 {
+				sliceOf := structField.Type().Elem().Kind()
+				slice := reflect.MakeSlice(structField.Type(), numElems, numElems)
+				for i := 0; i < numElems; i++ {
+					setWithProperType(sliceOf, inputValue[i], slice.Index(i), inputFieldName, errors)
+				}
+				formStruct.Field(i).Set(slice)
+			} else {
+				setWithProperType(typeField.Type.Kind(), inputValue[0], structField, inputFieldName, errors)
+			}
+			continue
+		}
+
+		inputFile, exists := formfile[inputFieldName]
+		if exists {
 			fhType := reflect.TypeOf((*multipart.FileHeader)(nil))
 			numElems := len(inputFile)
 			if structField.Kind() == reflect.Slice && numElems > 0 && structField.Type().Elem() == fhType {
@@ -243,6 +259,7 @@ func mapForm(formStruct reflect.Value, form map[string][]string, formfile map[st
 				structField.Set(reflect.ValueOf(inputFile[0]))
 			}
 		}
+
 	}
 }
 
